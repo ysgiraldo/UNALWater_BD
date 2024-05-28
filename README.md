@@ -1,3 +1,3 @@
 # BigData
 
-Documentación gráfica -> [Final](https://excalidraw.com/#room=369be717ae7d4aa24f62,ns_NKNgjJOlhR0z4Ua9lTA)
+![image](https://github.com/ysgiraldo/UNALWater_BD/assets/160282091/f781401e-870f-4a76-b9fb-c1c80f6ebbd0)
