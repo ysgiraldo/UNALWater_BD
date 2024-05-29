@@ -42,10 +42,10 @@ def convertir_y_guardar_csv(file_path, is_geospatial=False):
 
 # Lista de archivos Parquet y si contienen datos geoespaciales
 archivos_parquet = [
-    ("medellin_neighborhoods.parquet", True),  
-    ("50001.parquet", True),  
-    ("customers.parquet", False),        
-    ("employees.parquet", False)               
+    ("./data/medellin_neighborhoods.parquet", True),  
+    ("./data/50001.parquet", True),  
+    ("./data/customers.parquet", False),        
+    ("./data/employees.parquet", False)               
 ]
 
 # Leer, mostrar los primeros registros y la cantidad de registros de cada archivo, y convertir y guardar como CSV

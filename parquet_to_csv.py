@@ -2,10 +2,10 @@ import pandas as pd
 
 # Lista de archivos Parquet y sus correspondientes archivos CSV de salida
 files = [
-    ("/tmp/50001.parquet", "/tmp/50001.csv"),
-    ("/tmp/customers.parquet", "/tmp/customers.csv"),
-    ("/tmp/employees.parquet", "/tmp/employees.csv"),
-    ("/tmp/medellin_neighborhoods.parquet", "/tmp/medellin_neighborhoods.csv"),
+    ("data/50001.parquet", "data/50001.csv"),
+    ("data/customers.parquet", "data/customers.csv"),
+    ("data/employees.parquet", "data/employees.csv"),
+    ("data/medellin_neighborhoods.parquet", "data/medellin_neighborhoods.csv"),
 ]
 
 # Convertir cada archivo Parquet a CSV
