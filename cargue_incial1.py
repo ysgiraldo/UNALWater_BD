@@ -1,0 +1,68 @@
+import pandas as pd
+from faker import Faker
+from faker.providers import date_time
+from datetime import datetime
+from shapely.wkt import loads
+import random
+
+# Inicializar Faker
+fake = Faker('es_ES')
+fake.add_provider(date_time)
+
+# Obtener la fecha actual
+fecha_actual = datetime.now()
+
+# Cargar archivos Parquet de clientes y empleados
+customers_df = pd.read_parquet('customers.parquet')
+employees_df = pd.read_parquet('employees.parquet')
+
+# Cargar archivo Parquet con el registro de Medellín
+medellin_data = pd.read_parquet('50001.parquet')
+
+# Extraer el polígono de Medellín
+medellin_polygon = loads(medellin_data['geometry'].iloc[0])
+
+# Generar datos aleatorios dentro del polígono de Medellín
+data = []
+for _ in range(10000):  # Ajustar según la cantidad inicial que se requiera
+    # Generar puntos aleatorios dentro del polígono de Medellín
+    while True:
+        point = medellin_polygon.representative_point()  # Generar un punto representativo del polígono
+        lon, lat = point.x, point.y
+        latitud = random.uniform(lat - 0.01, lat + 0.01)  # Ajustar según la dispersión deseada
+        longitud = random.uniform(lon - 0.01, lon + 0.01)  # Ajustar según la dispersión deseada
+        new_point = loads(f"POINT ({longitud} {latitud})")
+        if medellin_polygon.contains(new_point):
+            break
+    
+    # Generar fecha dentro del año actual y del año anterior, sin superar el día actual
+    fecha = fake.date_time_between_dates(datetime(fecha_actual.year - 1, 1, 1), fecha_actual)
+    
+    # Obtener IDs de cliente y empleado
+    customer_id = fake.random_element(customers_df['customer_id'])
+    employee_id = fake.random_element(employees_df['employee_id'])
+    
+    # Generar número de orden y cantidad (entero)
+    order = fake.random_number(digits=10)
+    cantidad = fake.random_int(min=1, max=99)  # Ajustar a un número entero
+
+    data.append({
+        'latitude': latitud,
+        'longitude': longitud,
+        'date': fecha,
+        'customer_id': customer_id,
+        'employee_id': employee_id,
+        'quantity_products': cantidad,
+        'order_id': order,
+        
+    })
+
+# Crear DataFrame
+df = pd.DataFrame(data)
+
+# Guardar como archivo CSV
+df.to_csv('cargue_inicial.csv', index=False)
+
+# Leer el archivo CSV y convertir a Parquet
+df_parquet = pd.read_csv('cargue_inicial.csv')
+df_parquet.to_parquet('cargue_inicial.parquet', index=False)
