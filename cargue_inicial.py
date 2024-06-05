@@ -1,8 +1,8 @@
 import pandas as pd
+import geopandas as gpd
 from faker import Faker
 from faker.providers import date_time
 from datetime import datetime
-from shapely.wkt import loads
 import random
 
 # Inicializar Faker
@@ -13,31 +13,26 @@ fake.add_provider(date_time)
 fecha_actual = datetime.now()
 
 # Cargar archivos Parquet de clientes y empleados
-customers_df = pd.read_parquet('customers.parquet')
-employees_df = pd.read_parquet('employees.parquet')
+customers_df = pd.read_parquet("./data/customers.parquet")
+employees_df = pd.read_parquet("./data/employees.parquet")
 
-# Cargar archivo CSV de barrios de Medellín
-medellin_neighborhoods_df = pd.read_csv('medellin_neighborhoods.csv')
+# Cargar archivo Parquet con el registro de Medellín usando geopandas
+medellin_gdf = gpd.read_parquet("./data/50001.parquet")
 
-# Extraer los límites geográficos de Medellín
-medellin_polygon = None
-for index, row in medellin_neighborhoods_df.iterrows():
-    polygon = loads(row['geometry'])
-    if medellin_polygon is None:
-        medellin_polygon = polygon
-    else:
-        medellin_polygon = medellin_polygon.union(polygon)
+# Extraer el polígono de Medellín
+medellin_polygon = medellin_gdf.geometry.iloc[0]
 
-# Obtener los límites del polígono de Medellín
-lat_min, lat_max = medellin_polygon.bounds[1], medellin_polygon.bounds[3]
-lon_min, lon_max = medellin_polygon.bounds[0], medellin_polygon.bounds[2]
-
-# Generar datos aleatorios
+# Generar datos aleatorios dentro del polígono de Medellín
 data = []
-for _ in range(300000):  # Ajustar según la cantidad inicial que se requiera
-    # Generar latitud y longitud aleatorias dentro del rango de Medellín
-    latitud = random.uniform(lat_min, lat_max)
-    longitud = random.uniform(lon_min, lon_max)
+for _ in range(10000):  # Ajustar según la cantidad inicial que se requiera
+    # Generar puntos aleatorios dentro del polígono de Medellín
+    while True:
+        lon, lat = medellin_polygon.representative_point().coords[0]
+        latitud = random.uniform(lat - 0.9, lat + 0.9)  # Ajustar según la dispersión deseada
+        longitud = random.uniform(lon - 0.9, lon + 0.9)  # Ajustar según la dispersión deseada
+        new_point = (longitud, latitud)
+        if medellin_polygon.contains(gpd.points_from_xy([longitud], [latitud])[0]):
+            break
     
     # Generar fecha dentro del año actual y del año anterior, sin superar el día actual
     fecha = fake.date_time_between_dates(datetime(fecha_actual.year - 1, 1, 1), fecha_actual)
@@ -56,7 +51,7 @@ for _ in range(300000):  # Ajustar según la cantidad inicial que se requiera
         'date': fecha,
         'customer_id': customer_id,
         'employee_id': employee_id,
-        'quantity_prodcuts': cantidad,
+        'quantity_products': cantidad,
         'order_id': order,
         
     })
@@ -70,5 +65,3 @@ df.to_csv('cargue_inicial.csv', index=False)
 # Leer el archivo CSV y convertir a Parquet
 df_parquet = pd.read_csv('cargue_inicial.csv')
 df_parquet.to_parquet('cargue_inicial.parquet', index=False)
-
-
