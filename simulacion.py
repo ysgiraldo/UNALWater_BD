@@ -3,6 +3,7 @@ import geopandas as gpd
 from faker import Faker
 from faker.providers import date_time
 from datetime import datetime
+from shapely.geometry import Point
 import random
 import time
 import subprocess
@@ -25,17 +26,20 @@ medellin_gdf = gpd.read_parquet("./data/50001.parquet")
 # Extraer el polígono de Medellín
 medellin_polygon = medellin_gdf.geometry.iloc[0]
 
+# Parámetros para la distribución normal
+mu_lon, mu_lat = medellin_polygon.representative_point().coords[0]
+sigma = 0.3  # Desviación estándar (ajusta según sea necesario)
+
 # Definir la función para generar datos
 def generate_data():
     data = []
     for _ in range(1000):  # Ajustar según la cantidad inicial que se requiera
         # Generar puntos aleatorios dentro del polígono de Medellín
         while True:
-            lon, lat = medellin_polygon.representative_point().coords[0]
-            latitud = random.uniform(lat - 0.9, lat + 0.9)
-            longitud = random.uniform(lon - 0.9, lon + 0.9)
-            new_point = (longitud, latitud)
-            if medellin_polygon.contains(gpd.points_from_xy([longitud], [latitud])[0]):
+            latitud = random.gauss(mu_lat, sigma)
+            longitud = random.gauss(mu_lon, sigma)
+            new_point = Point(longitud, latitud)
+            if medellin_polygon.contains(new_point):
                 break
 
         # Generar fecha dentro del año actual y del año anterior, sin superar el día actual
