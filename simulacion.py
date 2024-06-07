@@ -42,7 +42,7 @@ def generate_data():
             if medellin_polygon.contains(new_point):
                 break
 
-        # Generar fecha dentro del año actual y del año anterior, sin superar el día actual
+        # Generar fecha dentro del dia actual
         fecha = fake.date_time_between_dates(datetime(fecha_actual.year - 1, 1, 1), fecha_actual)
         # Formatear la fecha en una cadena de texto compatible con MariaDB (YYYY-MM-DD HH:MM:SS)
         fecha_str = fecha.strftime('%Y-%m-%d %H:%M:%S')
@@ -53,7 +53,7 @@ def generate_data():
 
         # Generar número de orden y cantidad (entero)
         order = fake.random_number(digits=10)
-        cantidad = fake.random_int(min=1, max=99)
+        cantidad = fake.random_int(min=20, max=99)
 
         data.append({
             "latitude": latitud,
