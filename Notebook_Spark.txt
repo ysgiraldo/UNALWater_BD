@@ -1,0 +1,36 @@
+ls
+!pip install pandas geopandas faker pyarrow
+%run simulacion.py
+!hdfs dfs -ls /tmp
+#########################3
+
+Spark tablas
+
+##############
+
+from pyspark.sql.types import *
+schema = StructType([
+	StructField("latitude", StringType()),
+	StructField("longitude", StringType()),
+	StructField("date", StringType()),
+	StructField("customer_id", StringType()),
+	StructField("employee_id", StringType()),
+	StructField("quantity_products", StringType()),
+	StructField("order_id", StringType())
+
+])
+
+###########################################3
+
+Iniciar Spark Session
+
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("sesion_6_df").getOrCreate()
+########################################################################
+
+Crear dataframe inicial a partir de los archivos parquet con data generada
+
+###################################################################3
+# Cargar el archivo Parquet en un DataFrame
+df = spark.read.parquet("hdfs:///tmp/datos_rt.parquet")
+
