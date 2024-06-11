@@ -2,6 +2,7 @@ import pandas as pd
 import geopandas as gpd
 import argparse
 from faker import Faker
+from collections import deque
 from faker.providers import date_time
 from datetime import datetime, time
 from shapely.geometry import Point
@@ -77,58 +78,42 @@ def generate_data(num_samples=100):
         )
     return data
 
-# Definir la función para guardar los datos en formato JSON
-def save_data(data):
-    # Crear DataFrame
+# Definir la función para guardar los datos en formato json
+def save_data(data, filename="datos.json"):
     df = pd.DataFrame(data)
-
-    # Guardar como archivo JSON, sobrescribir el archivo existente
-    df.to_json("datos.json", orient="records", date_format="iso", lines=True)
+    df.to_json(filename, orient="records", date_format="iso", lines=True)
 
 # Definir la función para guardar los datos en formato Parquet
-def save_data_parquet(data):
-    # Convertir los datos en un DataFrame
+def save_data_parquet(data, filename="datos.parquet"):
     df = pd.DataFrame(data)
-    
-    # Definir el nombre del archivo Parquet
-    parquet_filename = "datos.parquet"
-    
-    # Si el archivo Parquet ya existe, agregar los nuevos datos al final
-    if os.path.exists(parquet_filename):
-        existing_table = pq.read_table(parquet_filename)
-        existing_df = existing_table.to_pandas()
-        df = pd.concat([existing_df, df], ignore_index=True)
-    
-    # Guardar el DataFrame actualizado como archivo Parquet
     table = pa.Table.from_pandas(df)
-    pq.write_table(table, parquet_filename)
-
+    pq.write_table(table, filename)
 
 # Definir la función principal
-# py simulacion.py --segundos 60 --simulaciones 2
-def main(segundos=30, simulaciones=1):
-    tiempo_inicio = time.time()  # Tiempo de inicio de la simulación
-    tiempo_actual = time.time()   # Tiempo actual
-    tiempo_simulacion = segundos * simulaciones  # Tiempo total de simulación
-
-    # Simular hasta que el tiempo transcurrido alcance el tiempo total de simulación
-    while tiempo_actual - tiempo_inicio < tiempo_simulacion:
-        # Generar datos
-        new_data = generate_data()
-
+def main(segundos=30, simulaciones=1, num_samples=100):
+    # Cola para los archivos de simulación
+    archivos_en_espera = deque()
+    tiempo_inicio = time.time()
+    
+    # Generar datos una vez al inicio para todas las simulaciones
+    all_data = [generate_data(num_samples) for _ in range(simulaciones)]
+    
+    for i, new_data in enumerate(all_data, start=1):
         # Guardar los nuevos datos en formato JSON
-        save_data(new_data)
-
+        json_filename = f"datos_simulacion_{i}.json"
+        save_data(new_data, json_filename)
+        
         # Guardar los nuevos datos en formato Parquet
-        save_data_parquet(new_data)
+        parquet_filename = f"datos_simulacion_{i}.parquet"
+        save_data_parquet(new_data, parquet_filename)
         
-        # Esperar el intervalo especificado antes de continuar
-        time.sleep(segundos)
-        
-        # Actualizar el tiempo actual
-        tiempo_actual = time.time()
+        # Añadir el archivo Parquet a la cola
+        archivos_en_espera.append(parquet_filename)
 
     print("Simulación completa.")
+    print("Archivos en cola de espera:")
+    for archivo in archivos_en_espera:
+        print(archivo)
 
 if __name__ == "__main__":
     # Parsear los argumentos de línea de comandos
@@ -155,4 +140,5 @@ if __name__ == "__main__":
 #         f"Error al transferir el archivo '{parquet_filename}' a Hadoop: {stderr.decode()}"
 #     )
 #
+# py 02_simulacion.py --segundos 60 --simulaciones 2
 #python -c "import pandas as pd; print(len(pd.read_parquet('datos.parquet')))"
