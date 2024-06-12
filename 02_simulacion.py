@@ -1,17 +1,16 @@
-import pandas as pd
-import geopandas as gpd
 import argparse
-from faker import Faker
-from collections import deque
-from faker.providers import date_time
-from datetime import datetime, time
-from shapely.geometry import Point
 import os.path
-import pyarrow as pa
-import pyarrow.parquet as pq  
-import random
 import subprocess
 import time
+from collections import deque
+from datetime import datetime, time as dt_time
+import random
+
+import geopandas as gpd
+import pandas as pd
+from faker import Faker
+from faker.providers import date_time
+from shapely.geometry import Point
 
 # Inicializar Faker
 fake = Faker("es_ES")
@@ -83,11 +82,10 @@ def save_data(data, filename="datos.json"):
     df = pd.DataFrame(data)
     df.to_json(filename, orient="records", date_format="iso", lines=True)
 
-# Definir la función para guardar los datos en formato Parquet
+# Definir la función para guardar los datos en formato parquet
 def save_data_parquet(data, filename="datos.parquet"):
     df = pd.DataFrame(data)
-    table = pa.Table.from_pandas(df)
-    pq.write_table(table, filename)
+    df.to_parquet(filename, index=False)
 
 # Definir la función principal
 def main(segundos=30, simulaciones=1, num_samples=100):
