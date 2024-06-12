@@ -1,25 +1,13 @@
 ls
 !pip install pandas geopandas faker pyarrow
+cd UNALWater_BD/
 %run simulacion.py
 !hdfs dfs -ls /tmp
-#########################3
 
-Spark tablas
-
-##############
-
-from pyspark.sql.types import *
-schema = StructType([
-	StructField("latitude", StringType()),
-	StructField("longitude", StringType()),
-	StructField("date", StringType()),
-	StructField("customer_id", StringType()),
-	StructField("employee_id", StringType()),
-	StructField("quantity_products", StringType()),
-	StructField("order_id", StringType())
-
-])
-
+!hdfs dfs -rm -r /Stagging/datos_rt_completos.parquet##borrar archivo
+!hdfs dfs -ls /Stagging
+!hdfs dfs -du -h /Stagging/datos_rt_completos.parquet######	CONSULTAR EL PESO DEL ARCHIVO
+#########################
 ###########################################3
 
 Iniciar Spark Session
@@ -34,3 +22,23 @@ Crear dataframe inicial a partir de los archivos parquet con data generada
 # Cargar el archivo Parquet en un DataFrame
 df = spark.read.parquet("hdfs:///tmp/datos_rt.parquet")
 
+df.show()
+
+#########################################
+ORGANIZAR DATAFRAME, CONVERTIR COLUMNA DATE A TIPO FECHA, ORDENAR ASCENDENTE POR FECHA
+###################################################3
+from pyspark.sql.functions import col, to_timestamp
+
+# Convertir la columna 'date' a tipo timestamp
+df = df.withColumn("date", to_timestamp(col("date"), "yyyy-MM-dd HH:mm:ss"))
+
+# Ordenar el DataFrame por la columna 'date' en orden ascendente
+df_sorted = df.orderBy(col("date").asc())
+
+df = df_sorted
+# Mostrar las primeras filas del DataFrame ordenado
+df.show()
+
+total_registros = df.count()
+print(f"El número total de registros es: {total_registros}")
+###########################################################
