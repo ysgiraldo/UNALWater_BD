@@ -3,6 +3,7 @@ import geopandas as gpd
 from faker import Faker
 from faker.providers import date_time
 from datetime import datetime
+from shapely.geometry import Point
 import random
 import time
 import subprocess
@@ -24,21 +25,21 @@ medellin_gdf = gpd.read_parquet("./data/50001.parquet")
 # Extraer el polígono de Medellín
 medellin_polygon = medellin_gdf.geometry.iloc[0]
 
+# Parámetros para la distribución normal
+mu_lon, mu_lat = medellin_polygon.representative_point().coords[0]
+sigma = 0.9  # Desviación estándar (se ajusta según sea necesario)
+
 # Definir la función para generar datos
-def generate_data():
+def generate_data(num_samples=1000):
     data = []
-    for _ in range(1000):  # Ajustar según la cantidad inicial que se requiera
+    minx, miny, maxx, maxy = medellin_polygon.bounds
+    for _ in range(num_samples):
         # Generar puntos aleatorios dentro del polígono de Medellín
         while True:
-            lon, lat = medellin_polygon.representative_point().coords[0]
-            latitud = random.uniform(
-                lat - 0.9, lat + 0.9
-            )  # Ajustar según la dispersión deseada
-            longitud = random.uniform(
-                lon - 0.9, lon + 0.9
-            )  # Ajustar según la dispersión deseada
-            new_point = (longitud, latitud)
-            if medellin_polygon.contains(gpd.points_from_xy([longitud], [latitud])[0]):
+            latitud = random.gauss(mu_lat, sigma)
+            longitud = random.gauss(mu_lon, sigma)
+            new_point = Point(longitud, latitud)
+            if medellin_polygon.contains(new_point):
                 break
 
         # Generar fecha dentro del año actual y del año anterior, sin superar el día actual
@@ -52,7 +53,7 @@ def generate_data():
 
         # Generar número de orden y cantidad (entero)
         order = fake.random_number(digits=10)
-        cantidad = fake.random_int(min=1, max=99)  # Ajustar a un número entero
+        cantidad = fake.random_int(min=20, max=99)  # Ajustar a un número entero
 
         data.append(
             {
