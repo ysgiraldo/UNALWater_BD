@@ -25,4 +25,5 @@ plt.title('Datos simulados de venta de botellas de agua en UNALWater. Medellín 
 plt.xlabel('Longitud')
 plt.ylabel('Latitud')
 plt.grid(True)
-plt.show()
+plt.savefig('./data/medellin_neighborhoods_simulacion.png')
+plt.close()
