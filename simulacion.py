@@ -15,41 +15,88 @@ fake.add_provider(date_time)
 # Obtener la fecha actual
 fecha_actual = datetime.now()
 
-# Cargar archivos Parquet de clientes y empleados
+# Cargar archivos Parquet de clientes, empleados y comunas de Medellín
 customers_df = pd.read_parquet("./data/customers.parquet")
 employees_df = pd.read_parquet("./data/employees.parquet")
+medellin_gdf = gpd.read_parquet("./data/medellin_neighborhoods.parquet")
 
-# Cargar archivo Parquet con el registro de Medellín usando geopandas
-medellin_gdf = gpd.read_parquet("./data/50001.parquet")
+# Asegurarse de que ambos GeoDataFrames tengan el mismo CRS
+if not medellin_gdf.crs:
+    medellin_gdf = medellin_gdf.set_crs("EPSG:4326", allow_override=True)
 
-# Extraer el polígono de Medellín
-medellin_polygon = medellin_gdf.geometry.iloc[0]
+# Extraer el polígono de Medellín (unión de todas las comunas)
+medellin_polygon = medellin_gdf.geometry.unary_union
 
-# Parámetros para la distribución normal
-mu_lon, mu_lat = medellin_polygon.representative_point().coords[0]
-sigma = 0.9  # Desviación estándar (se ajusta según sea necesario)
+# Función para generar puntos aleatorios dentro de un polígono
+def generate_random_point_within_polygon(polygon):
+    minx, miny, maxx, maxy = polygon.bounds
+    while True:
+        latitud = random.uniform(miny, maxy)
+        longitud = random.uniform(minx, maxx)
+        point = Point(longitud, latitud)
+        if polygon.contains(point):
+            return point
 
-# Definir la función para generar datos
+# Función para obtener el nombre del cliente por customer_id
+def get_customer_name(customer_id):
+    customer_info = customers_df[customers_df["customer_id"] == customer_id]
+    return customer_info.iloc[0]["name"] if not customer_info.empty else None
+
+# Función para obtener el nombre del empleado y la comisión 
+def get_employee_info(employee_id):
+    employee_info = employees_df[employees_df["employee_id"] == employee_id]
+    if not employee_info.empty:
+        # Ajustar el nombre de la columna de comisión aquí si es necesario
+        employee_commission = employee_info.iloc[0]["comission"]
+        employee_name = employee_info.iloc[0]["name"]
+    else:
+        employee_name = None
+        employee_commission = None
+    return employee_name, employee_commission
+
+# Función para generar datos
 def generate_data(num_samples=1000):
     data = []
-    minx, miny, maxx, maxy = medellin_polygon.bounds
     for _ in range(num_samples):
-        # Generar puntos aleatorios dentro del polígono de Medellín
-        while True:
-            latitud = random.gauss(mu_lat, sigma)
-            longitud = random.gauss(mu_lon, sigma)
-            new_point = Point(longitud, latitud)
-            if medellin_polygon.contains(new_point):
-                break
+        # Generar punto aleatorio dentro del polígono de Medellín
+        new_point = generate_random_point_within_polygon(medellin_polygon)
 
         # Generar fecha dentro del año actual y del año anterior, sin superar el día actual
         fecha = fake.date_time_between_dates(
             datetime(fecha_actual.year - 1, 1, 1), fecha_actual
         )
 
+        # Inicializar código y nombre de la comuna
+        codigo_comuna = None
+        nombre_comuna = None
+        
+        # Crear un GeoDataFrame temporal para realizar la unión espacial
+        temp_gdf = gpd.GeoDataFrame([{'geometry': new_point}], geometry='geometry')
+        
+        # Asegurar que temp_gdf tenga el mismo CRS que medellin_gdf
+        if not temp_gdf.crs:
+            temp_gdf = temp_gdf.set_crs(medellin_gdf.crs, allow_override=True)
+
+        # Realizar la unión espacial para obtener la comuna
+        temp_gdf = gpd.sjoin(temp_gdf, medellin_gdf, how="left", predicate="within")
+
+        # Verificar si temp_gdf está vacío después de la unión
+        if not temp_gdf.empty:
+            # Extraer el código y nombre de la comuna
+            codigo_comuna = temp_gdf.iloc[0]['CODIGO']
+            nombre_comuna = temp_gdf.iloc[0]['NOMBRE']
+        else:
+            # Manejar el caso donde no se encuentra ninguna comuna
+            codigo_comuna = None
+            nombre_comuna = None
+        
         # Obtener IDs de cliente y empleado
         customer_id = fake.random_element(customers_df["customer_id"])
         employee_id = fake.random_element(employees_df["employee_id"])
+
+        # Obtener el nombre del cliente y del empleado y la comision
+        customer_name = get_customer_name(customer_id)
+        employee_name, employee_commission = get_employee_info(employee_id)
 
         # Generar número de orden y cantidad (entero)
         order = fake.random_number(digits=10)
@@ -57,13 +104,18 @@ def generate_data(num_samples=1000):
 
         data.append(
             {
-                "latitude": latitud,
-                "longitude": longitud,
+                "latitude": new_point.y,
+                "longitude": new_point.x,
                 "date": fecha,
                 "customer_id": customer_id,
                 "employee_id": employee_id,
                 "quantity_products": cantidad,
                 "order_id": order,
+                "commune_code": codigo_comuna,
+                "commune_name": nombre_comuna,
+                "customer_name": customer_name,
+                "employee_name": employee_name,
+                "employee_commission": employee_commission
             }
         )
     return data
@@ -121,3 +173,5 @@ if process.returncode == 0:
     print(f"Archivo '{parquet_filename}' transferido a Hadoop en '{hadoop_path}'")
 else:
     print(f"Error al transferir el archivo '{parquet_filename}' a Hadoop: {stderr.decode()}")
+
+

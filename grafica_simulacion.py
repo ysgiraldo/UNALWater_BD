@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 medellin_neighborhoods = gpd.read_parquet('./data/medellin_neighborhoods.parquet')
 
 # Cargar el archivo Parquet de cargue inicial como un DataFrame de Pandas
-df_cargue = pd.read_parquet('datos_rt_completos_2024-06-13_17-36-13.parquet')
+df_cargue = pd.read_parquet('datos_rt_completos_2024-06-13_21-05-52.parquet')
 
 # Convertir las latitudes y longitudes del cargue inicial en una columna de geometría
 geometry = gpd.points_from_xy(df_cargue['longitude'], df_cargue['latitude'])
