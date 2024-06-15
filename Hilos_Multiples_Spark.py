@@ -79,7 +79,7 @@ def process_parquet_files():
         # Esperar un intervalo antes de la próxima verificación
         time.sleep(5)
 
-    return global_df
+
 
 # Crear e iniciar el hilo
 thread_process_files = threading.Thread(target=process_parquet_files)
