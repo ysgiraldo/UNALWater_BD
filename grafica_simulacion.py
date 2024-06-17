@@ -21,7 +21,7 @@ medellin_neighborhoods.plot(ax=ax, color='lightgrey', edgecolor='darkblue')
 # Agregar los puntos del cargue inicial al gráfico
 gdf_cargue.plot(ax=ax, color='blue', markersize=10, alpha=0.6)
 
-plt.title('Datos simulados de venta de botellas de agua en UNALWater. Medellín años 2023 y 2024')
+plt.title('Datos simulados de venta de botellas de agua en UNALWater. Medellín.  Año 2024')
 plt.xlabel('Longitud')
 plt.ylabel('Latitud')
 plt.grid(True)

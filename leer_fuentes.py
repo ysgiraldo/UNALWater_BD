@@ -4,12 +4,11 @@ import matplotlib.pyplot as plt
 import os
 
 file_path = [
-    "/workspace/UNALWater_BD/data/50001.parquet",
-    "/workspace/UNALWater_BD/data/customers.parquet",
-    "/workspace/UNALWater_BD/data/employees.parquet",
-    "/workspace/UNALWater_BD/data/medellin_neighborhoods.parquet",
+    "/workspace/UNALWater_BD/bronze/50001.parquet",
+    "/workspace/UNALWater_BD/bronze/customers.parquet",
+    "/workspace/UNALWater_BD/bronze/employees.parquet",
+    "/workspace/UNALWater_BD/bronze/medellin_neighborhoods.parquet",
 ]
-
 
 # Función para leer un archivo Parquet y mostrar los primeros registros y la cantidad de registros
 def leer_y_mostrar_parquet(file_path, is_geospatial=False):
@@ -24,6 +23,8 @@ def leer_y_mostrar_parquet(file_path, is_geospatial=False):
         plt.savefig(os.path.splitext(file_path)[0] + ".png")
         # Mostrar cantidad de registros
         print(f"Cantidad de registros en {file_path}: {len(gdf)}")
+        # Guardar como CSV en la carpeta 'data/csv_files'
+        gdf.to_csv(f"data/{os.path.splitext(os.path.basename(file_path))[0]}.csv", index=False)
     else:
         # Leer archivo Parquet con pandas
         df = pd.read_parquet(file_path)
@@ -32,14 +33,16 @@ def leer_y_mostrar_parquet(file_path, is_geospatial=False):
         print(f"Tipos de campos de {file_path}:\n", df.dtypes)
         # Mostrar cantidad de registros
         print(f"Cantidad de registros en {file_path}: {len(df)}")
+        # Guardar como CSV
+        df.to_csv(os.path.splitext(file_path)[0] + ".csv", index=False)
 
 
 # Lista de archivos Parquet y si contienen datos geoespaciales
 archivos_parquet = [
-    ("./data/medellin_neighborhoods.parquet", True),
-    ("./data/50001.parquet", True),
-    ("./data/customers.parquet", False),
-    ("./data/employees.parquet", False),
+    ("./bronze/medellin_neighborhoods.parquet", True),
+    ("./bronze/50001.parquet", True),
+    ("./bronze/customers.parquet", False),
+    ("./bronze/employees.parquet", False),
 ]
 
 # Leer, mostrar los primeros registros y la cantidad de registros de cada archivo, y convertir y guardar como CSV

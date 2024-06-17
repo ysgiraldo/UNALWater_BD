@@ -1,12 +1,13 @@
 import pandas as pd
 import geopandas as gpd
+import random
+import time
+import socket
+import json
 from faker import Faker
 from faker.providers import date_time
 from datetime import datetime
 from shapely.geometry import Point
-import random
-import time
-import subprocess
 
 # Inicializar Faker
 fake = Faker("es_ES")
@@ -16,9 +17,9 @@ fake.add_provider(date_time)
 fecha_actual = datetime.now()
 
 # Cargar archivos Parquet de clientes, empleados y comunas de Medellín
-customers_df = pd.read_parquet("./data/customers.parquet")
-employees_df = pd.read_parquet("./data/employees.parquet")
-medellin_gdf = gpd.read_parquet("./data/medellin_neighborhoods.parquet")
+customers_df = pd.read_parquet("./bronze/customers.parquet")
+employees_df = pd.read_parquet("./bronze/employees.parquet")
+medellin_gdf = gpd.read_parquet("./bronze/medellin_neighborhoods.parquet")
 
 # Asegurarse de que ambos GeoDataFrames tengan el mismo CRS
 if not medellin_gdf.crs:
@@ -42,7 +43,7 @@ def get_customer_name(customer_id):
     customer_info = customers_df[customers_df["customer_id"] == customer_id]
     return customer_info.iloc[0]["name"] if not customer_info.empty else None
 
-# Función para obtener el nombre del empleado y la comisión 
+# Función para obtener el nombre del empleado y la comisión
 def get_employee_info(employee_id):
     employee_info = employees_df[employees_df["employee_id"] == employee_id]
     if not employee_info.empty:
@@ -55,7 +56,7 @@ def get_employee_info(employee_id):
     return employee_name, employee_commission
 
 # Función para generar datos
-def generate_data(num_samples=1000):
+def generate_data(num_samples=100):
     data = []
     for _ in range(num_samples):
         # Generar punto aleatorio dentro del polígono de Medellín
@@ -94,7 +95,7 @@ def generate_data(num_samples=1000):
         customer_id = fake.random_element(customers_df["customer_id"])
         employee_id = fake.random_element(employees_df["employee_id"])
 
-        # Obtener el nombre del cliente y del empleado y la comision
+        # Obtener el nombre del cliente y del empleado y la comisión
         customer_name = get_customer_name(customer_id)
         employee_name, employee_commission = get_employee_info(employee_id)
 
@@ -106,7 +107,7 @@ def generate_data(num_samples=1000):
             {
                 "latitude": new_point.y,
                 "longitude": new_point.x,
-                "date": fecha,
+                "date": fecha.isoformat(),  # Convertir a ISO 8601 para asegurar compatibilidad JSON
                 "customer_id": customer_id,
                 "employee_id": employee_id,
                 "quantity_products": cantidad,
@@ -120,58 +121,25 @@ def generate_data(num_samples=1000):
         )
     return data
 
-# Intervalo de tiempo en segundos
-interval = 0  # Ajustar según sea necesario
+# Crear socket
+server_address = ('localhost', 12345)  # Asegúrate de que esto coincide con la configuración de Spark
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect(server_address)
 
-# Limitar a un número de iteraciones
-max_iterations = 1
-iterations = 0
+try:
+    while True:
+        data = generate_data()
+        
+        # Convertir a formato JSON y enviar por el socket
+        for item in data:
+            message = json.dumps(item)
+            sock.sendall(message.encode('utf-8') + b'\n')  # Enviar cada registro como una línea separada
 
-# Crear un DataFrame vacío para almacenar todos los registros generados
-all_data_df = pd.DataFrame()
+        print(f"Datos generados y enviados al socket")
 
-while iterations < max_iterations:
-    # Generar datos
-    data = generate_data()
+        # Esperar 30 segundos antes de generar el próximo conjunto de datos
+        time.sleep(30)
 
-    # Crear DataFrame
-    df = pd.DataFrame(data)
-
-    # Añadir los nuevos datos al DataFrame acumulativo
-    all_data_df = pd.concat([all_data_df, df], ignore_index=True)
-
-    print(f"Datos generados en la iteración {iterations + 1}")
-
-    # Incrementar el contador de iteraciones
-    iterations += 1
-
-    # Esperar el intervalo especificado
-    time.sleep(interval)
-
-# Formatear la fecha y hora actual
-fecha_hora_actual = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-# Guardar todos los datos acumulados como archivo Parquet
-parquet_filename = f"datos_rt_completos_{fecha_hora_actual}.parquet"
-all_data_df.to_parquet(parquet_filename, index=False)
-print(f"Todos los datos generados guardados en '{parquet_filename}'")
-
-
-# Crear la ruta en Hadoop
-hadoop_path = "/Stagging"
-create_directory_command = f"hadoop fs -mkdir -p {hadoop_path}"
-process = subprocess.Popen(create_directory_command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-stdout, stderr = process.communicate()
-
-
-# Transferir el archivo Parquet con todos los datos a Hadoop
-command = f"hadoop fs -put -f {parquet_filename} {hadoop_path}"
-process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-stdout, stderr = process.communicate()
-
-if process.returncode == 0:
-    print(f"Archivo '{parquet_filename}' transferido a Hadoop en '{hadoop_path}'")
-else:
-    print(f"Error al transferir el archivo '{parquet_filename}' a Hadoop: {stderr.decode()}")
-
-
+finally:
+    print('Cerrando el socket')
+    sock.close()
