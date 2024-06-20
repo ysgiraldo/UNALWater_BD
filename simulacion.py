@@ -1,13 +1,13 @@
 import pandas as pd
 import geopandas as gpd
-import random
-import time
-import socket
-import json
 from faker import Faker
 from faker.providers import date_time
 from datetime import datetime
 from shapely.geometry import Point
+import random
+import time
+import socket
+import json
 
 # Inicializar Faker
 fake = Faker("es_ES")
@@ -17,9 +17,9 @@ fake.add_provider(date_time)
 fecha_actual = datetime.now()
 
 # Cargar archivos Parquet de clientes, empleados y comunas de Medellín
-customers_df = pd.read_parquet("./bronze/customers.parquet")
-employees_df = pd.read_parquet("./bronze/employees.parquet")
-medellin_gdf = gpd.read_parquet("./bronze/medellin_neighborhoods.parquet")
+customers_df = pd.read_parquet("./data/customers.parquet")
+employees_df = pd.read_parquet("./data/employees.parquet")
+medellin_gdf = gpd.read_parquet("./data/medellin_neighborhoods.parquet")
 
 # Asegurarse de que ambos GeoDataFrames tengan el mismo CRS
 if not medellin_gdf.crs:
@@ -56,7 +56,7 @@ def get_employee_info(employee_id):
     return employee_name, employee_commission
 
 # Función para generar datos
-def generate_data(num_samples=100):
+def generate_data(num_samples=10):
     data = []
     for _ in range(num_samples):
         # Generar punto aleatorio dentro del polígono de Medellín

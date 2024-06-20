@@ -34,5 +34,3 @@ def accept_clients():
 print("Servidor de socket escuchando en el puerto 12345...")
 accept_thread = threading.Thread(target=accept_clients)
 accept_thread.start()
-
-#docker exec -it spark /bin/bash en una terminal cmd

@@ -17,5 +17,3 @@ thread_shell_script = threading.Thread(target=run_shell_script)
 thread_shell_script.start()
 
 #thread_shell_script.join()
-
-# docker exec -it spark /bin/bash (en una terminal cmd)
