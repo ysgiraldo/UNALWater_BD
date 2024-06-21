@@ -56,7 +56,7 @@ def get_employee_info(employee_id):
     return employee_name, employee_commission
 
 # Función para generar datos
-def generate_data(num_samples=10):
+def generate_data(num_samples=5):
     data = []
     for _ in range(num_samples):
         # Generar punto aleatorio dentro del polígono de Medellín
