@@ -1,7 +1,22 @@
+#####################################################################################3
+##TF STREAMING
+######################################################################################
+from pyspark.sql import DataFrame
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col
-from pyspark.sql.types import StructType, StringType, DoubleType, IntegerType, TimestampType
+from pyspark.sql.functions import from_json, col, sum, max, min, avg, count, round, lit, year, month, dayofmonth, trim, hour, minute, second, dayofweek
+from pyspark.sql.types import StructType, StringType, DoubleType, IntegerType, TimestampType, FloatType
 from datetime import datetime
+import os 
+import pandas as pd
+import geopandas as gpd
+from shapely.geometry import Point
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml import Pipeline
+from pyspark.ml.regression import RandomForestRegressor
+from pyspark.ml.evaluation import RegressionEvaluator
 
 # Crear sesión de Spark
 spark = SparkSession \
@@ -29,6 +44,17 @@ schema = StructType() \
     .add("employee_name", StringType()) \
     .add("employee_commission", DoubleType())
 
+# Función para guardar los datos recibidos en bronze
+def process_data(df, epoch_id):
+    try:
+        hdfs_path = "/user/root/bronze"
+        df.write \
+          .format("parquet") \
+          .mode("append") \
+          .save(hdfs_path)
+    except Exception as e:
+        print(f"Error al procesar los datos: {e}")
+
 # Leer datos desde el socket
 streaming_df = spark \
     .readStream \
@@ -37,42 +63,31 @@ streaming_df = spark \
     .option("port", 12345) \
     .load()
 
+
 # Parsear los datos JSON utilizando el esquema definido
 parsed_df = streaming_df \
     .select(from_json(col("value").cast("string"), schema).alias("parsed_value")) \
     .select("parsed_value.*")
 
-# Función para guardar los datos recibidos en bronze
-def process_data(df, epoch_id):
-    try:
-        # Generar el nombre del archivo con la fecha y hora actual
-        timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        hdfs_path = f"/user/root/bronze/data_{timestamp}.parquet"
-        print(hdfs_path)
-        df.write \
-          .format("parquet") \
-          .mode("append") \
-          .save(hdfs_path)
-        #df.show(truncate=False)
-    except Exception as e:
-        print(f"Error al procesar los datos: {e}")
 
-# Escribir los resultados en la consola
-query = parsed_df \
+
+# Procesar en streaming y escribir en la capa Silver
+query1 = parsed_df \
     .writeStream \
+    .trigger(processingTime='2 seconds') \
     .foreachBatch(process_data) \
     .outputMode("append") \
     .start()
 
-#### Capa silver procesamiento
-####
-from pyspark.sql import SparkSession
-from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, expr, round, lit, year, month, dayofmonth, trim, hour, minute, second, dayofweek
-import os 
 
-# Obtener la sesión de Spark existente si está activa
-spark = SparkSession.builder.getOrCreate()
+
+
+############################## CAPA SILVER
+
+
+# Rutas en hdfs (distrbuido)
+bronze_path = "hdfs:///user/root/bronze"  
+silver_path = "hdfs:///user/root/silver/unificado.parquet"  
 
 # Función para leer archivos Parquet desde HDFS
 def leer_archivos_parquet(path: str) -> DataFrame:
@@ -87,11 +102,14 @@ def leer_archivos_parquet(path: str) -> DataFrame:
         print(f"Error al leer el archivo Parquet {path}: {e}")
         return None
     
-# Ruta de bronze
-bronze_path = "hdfs:///user/root/bronze"  
 
 # Leer archivos Parquet desde el directorio en HDFS
-df_bronze = leer_archivos_parquet(bronze_path)
+# Configurar streaming para leer datos desde la capa Bronze
+df_bronze = spark \
+    .readStream \
+    .schema(schema) \
+    .format("json") \
+    .load(bronze_path)
 
 # Función para agregar una columna con valor constante al precio y dividir la fecha
 def transformar_df(df: DataFrame) -> DataFrame:
@@ -114,11 +132,11 @@ def transformar_df(df: DataFrame) -> DataFrame:
 # Función para guardar DataFrame en un archivo Parquet en la capa Silver, siempre sobreescribe esto es compactar
 def guardar_archivo_parquet(df: DataFrame, path: str) -> None:
     df.coalesce(1).write \
-        .mode("append") \
+        .mode("overwrite") \
         .parquet(path)
         
 # Función principal para unir archivos de Bronze a Silver
-def unir_archivos_bronze_a_silver(bronze_path: str, silver_path: str) -> None:
+def unir_archivos_bronze_a_silver(batch_df, batch_id) -> None:
     # Leer archivos Parquet desde la capa Bronze
     df_bronze = leer_archivos_parquet(bronze_path)
 
@@ -136,55 +154,86 @@ def unir_archivos_bronze_a_silver(bronze_path: str, silver_path: str) -> None:
         records_processed = df_silver_transformado.count()
         print(f"Cantidad de registros procesados en silver después de transformar: {records_processed}")
     
-    # Mostrar el DataFrame transformado (opcional)
-    #df_transformado.printSchema()
-    #df_transformado.show()
 
-# Rutas en hdfs (distrbuido)
-bronze_path = "hdfs:///user/root/bronze"  
-silver_path = "hdfs:///user/root/silver/unificado.parquet"  
 
-# Ejecutar el proceso de unión
-unir_archivos_bronze_a_silver(bronze_path, silver_path)
-# Mantener el stream en ejecución
+
+# Procesar en streaming y escribir en la capa Silver
+query2 = df_bronze \
+    .writeStream \
+    .trigger(processingTime='2 seconds') \
+    .foreachBatch(unir_archivos_bronze_a_silver) \
+    .outputMode("append") \
+    .start()
+
 
 
 #### Capa gold
 ####
-from pyspark.sql import SparkSession 
-from pyspark.sql.functions import sum, max, min, avg, count, col
 
-# Obtener la sesión de Spark existente si está activa
-spark = SparkSession.builder.getOrCreate()
+
 
 # Ruta del archivo Parquet en la capa Silver
 silver_path = "hdfs:///user/root/silver/unificado.parquet"
 
-# Leer los datos desde el archivo Parquet en la capa Silver
-df = spark.read.parquet(silver_path)
-
-# Crear la base de datos si no existe
-spark.sql("CREATE DATABASE IF NOT EXISTS UNALwater")
-
-# Establecer la base de datos en uso
-spark.sql("USE UNALwater")
-
 # Definir la ruta en HDFS donde se guardará la tabla en formato Parquet en la capa Gold
 gold_path = "hdfs:///user/root/gold/UNALWater"
 
-# Insertar el dataframe en una tabla externa UNALWater particionada por el campo 'date'
-df.write.mode("append") \
-  .partitionBy("date") \
-  .format("parquet") \
-  .option("path", gold_path) \
-  .saveAsTable("UNALWater")
+# Leer los datos desde el archivo Parquet en la capa Silver
+#df = spark.read.parquet(silver_path)
 
-# Mostrar la estructura de la tabla
-#print("Estructura de la tabla UNALWater:")
-#spark.sql("DESCRIBE UNALWater").show()
+schema_gold = StructType() \
+    .add("latitude", DoubleType()) \
+    .add("longitude", DoubleType()) \
+    .add("date", TimestampType()) \
+    .add("customer_id", StringType()) \
+    .add("employee_id", StringType()) \
+    .add("quantity_products", IntegerType()) \
+    .add("order_id", StringType()) \
+    .add("commune_code", StringType()) \
+    .add("commune_name", StringType()) \
+    .add("customer_name", StringType()) \
+    .add("employee_name", StringType()) \
+    .add("employee_commission", DoubleType()) \
+    .add("price", IntegerType()) \
+    .add("sales", IntegerType()) \
+    .add("commission_value", DoubleType()) \
+    .add("year", IntegerType()) \
+    .add("month", IntegerType()) \
+    .add("day", IntegerType()) \
+    .add("day_week", IntegerType()) \
+    .add("hour", IntegerType()) \
+    .add("minute", IntegerType()) \
+    .add("second", IntegerType())
 
-# Construir y ejecutar consultas SQL para responder preguntas de negocio
-query_ventas_por_comuna = """
+
+
+df = spark \
+    .readStream \
+    .schema(schema_gold) \
+    .load(silver_path)
+
+
+# Crear la base de datos si no existe
+spark.sql("CREATE DATABASE IF NOT EXISTS UNALwater")
+# Establecer la base de datos en uso
+spark.sql("USE UNALwater")
+
+
+# Función principal para unir archivos de Bronze a Silver y ejecutar consultas SQL en streaming
+def actualizar_gold(batch_df, batch_id) -> None:
+    # Asegurar que la base de datos UNALwater esté en uso
+    spark.sql("USE UNALwater")
+
+    # Escribir los datos en la capa Gold
+    batch_df.write.mode("append") \
+        .partitionBy("date") \
+        .format("parquet") \
+        .option("path", gold_path) \
+        .saveAsTable("UNALWater")
+    
+    #sparl.sql("DROP DATABASE IF EXISTS UNALwater")
+    print("Comportamiento de la cantidad de ventas por comuna:")
+    spark.sql("""
     SELECT 
         CASE 
             WHEN commune_name LIKE '%CORREGIMIENTO DE SAN SEBAS%' THEN 'SAN SEBASTIAN DE PALMITAS'
@@ -198,9 +247,10 @@ query_ventas_por_comuna = """
     FROM UNALWater
     GROUP BY Comuna_Corregimiento
     ORDER BY Total_Ventas DESC;
-"""
-
-query_ventas_por_vendedor = """
+    """).show()
+    
+    print("Comportamiento de la cantidad de ventas por vendedor:")
+    spark.sql("""
     SELECT 
         employee_name AS Vendedor,
         SUM(quantity_products) AS Cantidad_Productos,
@@ -209,9 +259,10 @@ query_ventas_por_vendedor = """
     FROM UNALWater
     GROUP BY employee_name
     ORDER BY Valor_Comision DESC
-"""
-
-query_top10_por_clientes = """
+    """).show()
+    
+    print("Los 10 clientes que más nos han comprado botellas de agua:")
+    spark.sql("""
     SELECT 
         customer_name AS Cliente,
         SUM(quantity_products) AS Cantidad_Productos,
@@ -220,9 +271,10 @@ query_top10_por_clientes = """
     GROUP BY customer_name
     ORDER BY Total_Ventas DESC
     LIMIT 10
-"""
-
-query_ventas_por_dia = """
+    """).show()
+    
+    print("Comportamiento de ventas de botellas de agua por día de la semana:")
+    spark.sql("""
     SELECT 
         CASE 
             WHEN day_week = 1 THEN 'Domingo' 
@@ -238,139 +290,126 @@ query_ventas_por_dia = """
     FROM UNALWater
     GROUP BY day_week
     ORDER BY Total_Ventas DESC
-"""
+    """).show()
 
-# Ejecutar las consultas SQL y mostrar los resultados
-ventas_por_comuna = spark.sql(query_ventas_por_comuna)
-print("Comportamiento de la cantidad de ventas por comuna:")
-ventas_por_comuna.show()
 
-ventas_por_vendedor = spark.sql(query_ventas_por_vendedor)
-print("Comportamiento de la cantidad de ventas por vendedor:")
-ventas_por_vendedor.show()
 
-top10_por_clientes = spark.sql(query_top10_por_clientes)
-print("Los 10 clientes que más nos han comprado botellas de agua:")
-top10_por_clientes.show()
+# Configurar el proceso de escritura de streaming
+query3 = df \
+    .writeStream \
+    .trigger(processingTime='3 seconds') \
+    .foreachBatch(actualizar_gold) \
+    .outputMode("update") \
+    .start()
 
-ventas_por_dia = spark.sql(query_ventas_por_dia)
-print("Comportamiento de ventas de botellas de agua por día de la semana:")
-ventas_por_dia.show()
 
 ########################################GRAFICA###################################
 
 # Importar las librerías necesarias
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col
-from pyspark.sql.types import FloatType
-import pandas as pd
-import geopandas as gpd
-from shapely.geometry import Point
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-import matplotlib.cm as cm
 
-# Crear la sesión de Spark con configuración ajustada
-spark = SparkSession.builder \
-    .config("spark.driver.memory", "4g") \
-    .config("spark.executor.memory", "4g") \
-    .getOrCreate()
+
 
 # Definir la ruta del archivo Parquet con datos de ventas en la capa Silver
 cargue_inicial_path = 'hdfs:///user/root/silver/unificado.parquet'
 
-try:
-    # Cargar el archivo Parquet de cargue inicial como un DataFrame de Spark
-    df_cargue = spark.read.parquet(cargue_inicial_path)
+def actualizar_grafica(df_cargue, batch_id) -> None:
+    try:
+        # Cargar el archivo Parquet de cargue inicial como un DataFrame de Spark
+        df_cargue = spark.read.parquet(cargue_inicial_path)
 
-    # Convertir las columnas de longitud y latitud a tipo Float
-    df_cargue = df_cargue.withColumn('longitude', col('longitude').cast(FloatType())) \
-                         .withColumn('latitude', col('latitude').cast(FloatType()))
+        # Convertir las columnas de longitud y latitud a tipo Float
+        df_cargue = df_cargue.withColumn('longitude', col('longitude').cast(FloatType())) \
+                             .withColumn('latitude', col('latitude').cast(FloatType()))
 
-    # Convertir el DataFrame de Spark en un DataFrame de Pandas
-    df_cargue_pd = df_cargue.toPandas()
+        # Convertir el DataFrame de Spark en un DataFrame de Pandas
+        df_cargue_pd = df_cargue.toPandas()
 
-    # Crear una columna de geometría en el DataFrame de Pandas
-    df_cargue_pd['geom'] = df_cargue_pd.apply(lambda row: Point(row['longitude'], row['latitude']), axis=1)
+        # Crear una columna de geometría en el DataFrame de Pandas
+        df_cargue_pd['geom'] = df_cargue_pd.apply(lambda row: Point(row['longitude'], row['latitude']), axis=1)
 
-    # Convertir el DataFrame de Pandas en un GeoDataFrame de GeoPandas
-    gdf_cargue = gpd.GeoDataFrame(df_cargue_pd, geometry='geom')
-    
-    # Cargar el archivo Parquet de geometrías de Medellín como un GeoDataFrame de GeoPandas
-    medellin_neighborhoods = gpd.read_parquet('./data/medellin_neighborhoods.parquet')
+        # Convertir el DataFrame de Pandas en un GeoDataFrame de GeoPandas
+        gdf_cargue = gpd.GeoDataFrame(df_cargue_pd, geometry='geom')
 
-    # Crear una escala de colores basada en las ventas
-    norm = mcolors.Normalize(vmin=gdf_cargue['sales'].min(), vmax=gdf_cargue['sales'].max())
-    cmap = cm.ScalarMappable(norm=norm, cmap='viridis')
+        # Cargar el archivo Parquet de geometrías de Medellín como un GeoDataFrame de GeoPandas
+        medellin_neighborhoods = gpd.read_parquet('./data/medellin_neighborhoods.parquet')
 
-    # Asignar colores a cada punto basado en las ventas
-    gdf_cargue['color'] = gdf_cargue['sales'].apply(lambda x: cmap.to_rgba(x))
+        # Crear una escala de colores basada en las ventas
+        norm = mcolors.Normalize(vmin=gdf_cargue['sales'].min(), vmax=gdf_cargue['sales'].max())
+        cmap = cm.ScalarMappable(norm=norm, cmap='viridis')
 
-    # Crear el gráfico con las geometrías de Medellín y los puntos del cargue inicial
-    fig, ax = plt.subplots(figsize=(15, 15))
-    medellin_neighborhoods.plot(ax=ax, color='lightgrey', edgecolor='darkblue')
-    
-    # Graficar los puntos con tamaño proporcional a las ventas y colores variados
-    gdf_cargue.plot(ax=ax, color=gdf_cargue['color'], markersize=gdf_cargue['sales'] / 100, alpha=0.6)
-    
-    plt.title('Datos de ventas en Medellín y ubicaciones de clientes', fontsize = 16)
-    plt.gca().spines['top'].set_visible(False)
-    plt.gca().spines['left'].set_visible(False)
-    plt.gca().spines['right'].set_visible(False)
-    plt.gca().spines['bottom'].set_visible(False)
-    plt.gca().axes.get_yaxis().set_visible(False)
-    plt.gca().axes.get_xaxis().set_visible(False)
-    plt.grid(False)
-    
-    # Añadir la barra de color
-    cax = fig.add_axes([0.95, 0.45, 0.02, 0.3])
-    cbar = plt.colorbar(cmap, cax=cax, orientation='vertical', label='Ventas')
-    plt.show()
-    
-    # Guardar la figura en un archivo si la visualización es correcta
-    plt.savefig('./medellin_neighborhoods_simulacion.png')
-    plt.close()
-    
-except Exception as e:
-    print(f"Error al convertir o visualizar los datos con GeoPandas: {str(e)}")
+        # Asignar colores a cada punto basado en las ventas
+        gdf_cargue['color'] = gdf_cargue['sales'].apply(lambda x: cmap.to_rgba(x))
+
+        # Crear el gráfico con las geometrías de Medellín y los puntos del cargue inicial
+        fig, ax = plt.subplots(figsize=(15, 15))
+        medellin_neighborhoods.plot(ax=ax, color='lightgrey', edgecolor='darkblue')
+
+        # Graficar los puntos con tamaño proporcional a las ventas y colores variados
+        gdf_cargue.plot(ax=ax, color=gdf_cargue['color'], markersize=gdf_cargue['sales'] / 100, alpha=0.6)
+
+        plt.title('Datos de ventas en Medellín y ubicaciones de clientes', fontsize = 16)
+        plt.gca().spines['top'].set_visible(False)
+        plt.gca().spines['left'].set_visible(False)
+        plt.gca().spines['right'].set_visible(False)
+        plt.gca().spines['bottom'].set_visible(False)
+        plt.gca().axes.get_yaxis().set_visible(False)
+        plt.gca().axes.get_xaxis().set_visible(False)
+        plt.grid(False)
+
+        # Añadir la barra de color
+        cax = fig.add_axes([0.95, 0.45, 0.02, 0.3])
+        cbar = plt.colorbar(cmap, cax=cax, orientation='vertical', label='Ventas')
+        plt.show()
+
+        # Guardar la figura en un archivo si la visualización es correcta
+        plt.savefig('./medellin_neighborhoods_simulacion.png')
+        plt.close()
+
+    except Exception as e:
+        print(f"Error al convertir o visualizar los datos con GeoPandas: {str(e)}")
+
+# Configurar el proceso de escritura de streaming
+query4 = df \
+    .writeStream \
+    .trigger(processingTime='6 seconds') \
+    .foreachBatch(actualizar_grafica) \
+    .outputMode("update") \
+    .start()
 
 ########################################MACHINE LEARNING
 
 # Datos en Spark
-from pyspark.sql import SparkSession
-from pyspark.ml.feature import VectorAssembler
-from pyspark.ml import Pipeline
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, udf
-from pyspark.sql.types import FloatType
-from shapely.geometry import Point
-import matplotlib.pyplot as plt
-from pyspark.ml.regression import RandomForestRegressor
-from pyspark.ml.evaluation import RegressionEvaluator
 
-# Crear una sesión de Spark
-spark = SparkSession.builder.appName("NeuralNetwork").getOrCreate()
+
+
 
 # Definir la ruta del archivo Parquet con datos de ventas en la capa Silver
 cargue_inicial_path = 'hdfs:///user/root/silver/unificado.parquet'
 
-# Cargar el archivo Parquet de cargue inicial como un DataFrame de Spark
-df_cargue = spark.read.parquet(cargue_inicial_path)
+def actualizar_ml(df_cargue, batch_id) -> None:
 
-# Convertir las columnas de longitud y latitud a tipo Float y crear columna 'geom'
-df_cargue = df_cargue.withColumn('longitude', col('longitude').cast(FloatType())) \
-                         .withColumn('latitude', col('latitude').cast(FloatType()))
-# df_cargue.show()
-df_cargue.columns
+    # Convertir las columnas de longitud y latitud a tipo Float y crear columna 'geom'
+    df_cargue = df_cargue.withColumn('longitude', col('longitude').cast(FloatType())) \
+                             .withColumn('latitude', col('latitude').cast(FloatType()))
 
-# Seleccionar las columnas necesarias
-df_pronostico = df_cargue.select('latitude', 'longitude', 'sales', 'commune_name')
+    # Seleccionar las columnas necesarias
+    df_pronostico = df_cargue.select('latitude', 'longitude', 'sales', 'commune_name')
 
-# Mostrar el DataFrame
-df_pronostico.show(truncate=100)
+    # Mostrar el DataFrame
+    df_pronostico.show(truncate=100)
+
+# Configurar el proceso de escritura de streaming
+query5 = df \
+    .writeStream \
+    .trigger(processingTime='5 seconds') \
+    .foreachBatch(actualizar_ml) \
+    .outputMode("update") \
+    .start()
 
 
-
-query.awaitTermination()
-
-
+# Esperar a que las consultas de streaming terminen
+query1.awaitTermination()
+query2.awaitTermination()
+query3.awaitTermination()
+query4.awaitTermination()
+query5.awaitTermination()
